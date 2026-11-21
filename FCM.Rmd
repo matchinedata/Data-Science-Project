@@ -1,0 +1,141 @@
+---
+title: "FCM"
+output: html_notebook
+---
+# Manual Fuzzy C-Means (FCM) on 10 points, 2 clusters
+# Own code for: (1) centroid computation
+#               (2) distance -> membership conversion
+
+set.seed(2)
+
+## ---- 1. Generate 10 points from 2 clusters ------------------------
+
+```{r}
+n       <- 10
+cluster <- rep(1:2, each = 5)                 # true cluster labels
+centers <- rbind(c(2, 2), c(8, 8))            # true cluster centres
+dataset <- cbind(
+  x = centers[cluster, 1] + rnorm(n, sd = 0.8),
+  y = centers[cluster, 2] + rnorm(n, sd = 0.8)
+)
+rownames(dataset) <- paste0("P", 1:n)
+print(round(dataset, 3))
+
+plot(dataset, col = cluster, pch = 19, main = "Raw data (true clusters)")
+text(dataset, labels = rownames(dataset), pos = 3, cex = 0.8)
+```
+
+## ---- 2. Parameters -------------------------------------------------
+```{r}
+m <- 2        # fuzzifier (m > 1)
+c <- 2        # number of clusters
+```
+
+## ---- 3. Own functions ----------------------------------------------
+
+# Centroid: v_j = sum_i (u_ij^m * x_i) / sum_i (u_ij^m)
+```{r}
+compute_centroids <- function(X, U, m) {
+  C <- matrix(0, nrow = ncol(U), ncol = ncol(X))
+  for (j in 1:ncol(U)) {
+    w <- U[, j]^m                       # weights u_ij^m
+    for (d in 1:ncol(X)) {
+      C[j, d] <- sum(w * X[, d]) / sum(w)
+    }
+  }
+  colnames(C) <- colnames(X)
+  rownames(C) <- paste0("C", 1:ncol(U))
+  C
+}
+```
+
+# Euclidean distance of every point to every centroid
+```{r}
+compute_distances <- function(X, C) {
+  D <- matrix(0, nrow = nrow(X), ncol = nrow(C))
+  for (i in 1:nrow(X)) {
+    for (j in 1:nrow(C)) {
+      D[i, j] <- sqrt(sum((X[i, ] - C[j, ])^2))
+    }
+  }
+  rownames(D) <- rownames(X)
+  colnames(D) <- rownames(C)
+  D
+}
+```
+
+# Distances -> memberships: u_ij = 1 / sum_k (d_ij / d_ik)^(2/(m-1))
+```{r}
+distances_to_membership <- function(D, m) {
+  U <- matrix(0, nrow = nrow(D), ncol = ncol(D))
+  for (i in 1:nrow(D)) {
+    if (any(D[i, ] == 0)) {             # point sits exactly on a centroid
+      U[i, D[i, ] == 0] <- 1 / sum(D[i, ] == 0)
+    } else {
+      for (j in 1:ncol(D)) {
+        U[i, j] <- 1 / sum((D[i, j] / D[i, ])^(2 / (m - 1)))
+      }
+    }
+  }
+  dimnames(U) <- dimnames(D)
+  U
+}
+```
+
+# Objective: J = sum_i sum_j u_ij^m * d_ij^2
+```{r}
+objective <- function(U, D, m) sum(U^m * D^2)
+```
+
+## ---- 4. Random initial membership matrix (rows sum to 1) -----------
+```{r}
+u1 <- runif(n, 0.2, 0.8)
+U0 <- cbind(C1 = u1, C2 = 1 - u1)
+rownames(U0) <- rownames(dataset)
+cat("\n=== Initial membership matrix U0 ===\n")
+print(round(U0, 4))
+```
+
+## ---- 5. Iteration 1 ------------------------------------------------
+```{r}
+cat("\n================ ITERATION 1 ================\n")
+C1 <- compute_centroids(dataset, U0, m)
+cat("Centroids:\n");        print(round(C1, 4))
+D1 <- compute_distances(dataset, C1)
+cat("Distances:\n");        print(round(D1, 4))
+U1 <- distances_to_membership(D1, m)
+cat("New memberships:\n");  print(round(U1, 4))
+cat("Objective J =", round(objective(U1, D1, m), 4), "\n")
+cat("Max change in U =", round(max(abs(U1 - U0)), 6), "\n")
+
+```
+
+## ---- 6. Iteration 2 ------------------------------------------------
+## ---- 7. Iteration 2 ------------------------------------------------
+
+## ---- 8. (Optional) continue until convergence ----------------------
+```{r}
+U <- U1
+for (it in 4:100) {
+  C <- compute_centroids(dataset, U, m)
+  D <- compute_distances(dataset, C)
+  Unew <- distances_to_membership(D, m)
+  delta <- max(abs(Unew - U))
+  U <- Unew
+  if (delta < 1e-6) { cat("\nConverged at iteration", it, "\n"); break }
+}
+cat("\nFinal centroids:\n");    print(round(C, 4))
+cat("Final memberships:\n");    print(round(U, 4))
+
+## ---- 9. Plot result ------------------------------------------------
+hard <- apply(U, 1, which.max)
+plot(dataset, col = hard, pch = 19, main = "FCM result (hard assignment)")
+points(C, pch = 8, cex = 2, lwd = 2)
+text(dataset, labels = rownames(dataset), pos = 3, cex = 0.8)
+
+
+```
+
+
+
+
